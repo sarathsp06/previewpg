@@ -1,5 +1,4 @@
-# PreviewPG: The Schema-Aware SQL Federation Proxy
-
+# PreviewPG: The Schema-Aware SQL Federation Proxy   [![Go](https://github.com/sarathsp06/previewpg/actions/workflows/go.yml/badge.svg)](https://github.com/sarathsp06/previewpg/actions/workflows/go.yml)
 PreviewPG is a transparent, intelligent PostgreSQL proxy that virtualizes a preview/QA database environment. It automatically federates data between a "production" and a "fresh" database, presenting a unified, consistent view to the client.
 
 ## Overview
