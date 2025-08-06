@@ -1,0 +1,17 @@
+proxy:
+  host: "localhost"
+  port: 5432
+
+production_db:
+  host: "localhost"
+  port: 5433
+  user: "postgres"
+  password: "password"
+  dbname: "production"
+
+fresh_db:
+  host: "localhost"
+  port: 5434
+  user: "postgres"
+  password: "password"
+  dbname: "fresh"
