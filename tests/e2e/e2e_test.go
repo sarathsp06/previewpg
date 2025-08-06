@@ -3,69 +3,93 @@ package e2e
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/modules/postgres"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
-func TestContainersRunning(t *testing.T) {
+func TestFDWSetup(t *testing.T) {
 	ctx := context.Background()
 
-	// Define a more robust wait strategy to ensure the database is ready.
-	waitStrategy := wait.ForLog("database system is ready to accept connections").
-		WithOccurrence(2).
-		WithStartupTimeout(5 * time.Minute)
-
-	// Create production container with the wait strategy
-	prodContainer, err := postgres.RunContainer(ctx,
-		testcontainers.WithImage("docker.io/postgres:16-alpine"),
-		testcontainers.WithWaitStrategy(waitStrategy),
-	)
+	// Create tables in both databases
+	_, err := prodDB.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+	assert.NoError(t, err)
+	_, err = freshDB.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
 	assert.NoError(t, err)
 	defer func() {
-		if err := prodContainer.Terminate(ctx); err != nil {
-			t.Fatalf("failed to terminate prod container: %s", err)
-		}
+		_, err := prodDB.Exec(ctx, `DROP TABLE users`)
+		assert.NoError(t, err)
+		_, err = freshDB.Exec(ctx, `DROP TABLE users`)
+		assert.NoError(t, err)
 	}()
 
-	// Create fresh container with the wait strategy
-	freshContainer, err := postgres.RunContainer(ctx,
-		testcontainers.WithImage("docker.io/postgres:16-alpine"),
-		testcontainers.WithWaitStrategy(waitStrategy),
-	)
+	// Start the proxy
+	proxyConnStr, stop, err := startProxy(15432, prodResource)
+	assert.NoError(t, err)
+	defer stop()
+
+	// Connect to proxy
+	proxyConn, err := pgx.Connect(ctx, proxyConnStr)
+	assert.NoError(t, err)
+	defer proxyConn.Close(ctx)
+
+	// Ping proxy
+	err = proxyConn.Ping(ctx)
+	assert.NoError(t, err)
+
+	// Verify that the foreign table was created in the fresh database
+	var tableName string
+	err = freshDB.QueryRow(ctx, "SELECT ftrelid::regclass::text FROM pg_foreign_table").Scan(&tableName)
+	assert.NoError(t, err)
+	assert.Equal(t, "prod_users", tableName)
+}
+
+func TestQueryFederation(t *testing.T) {
+	ctx := context.Background()
+
+	// Create tables in both databases
+	_, err := prodDB.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
+	assert.NoError(t, err)
+	_, err = freshDB.Exec(ctx, `CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT)`)
 	assert.NoError(t, err)
 	defer func() {
-		if err := freshContainer.Terminate(ctx); err != nil {
-			t.Fatalf("failed to terminate fresh container: %s", err)
-		}
+		_, err := prodDB.Exec(ctx, `DROP TABLE users`)
+		assert.NoError(t, err)
+		_, err = freshDB.Exec(ctx, `DROP TABLE users`)
+		assert.NoError(t, err)
 	}()
 
-	// Get connection strings
-	prodConnStr, err := prodContainer.ConnectionString(ctx, "sslmode=disable")
-	assert.NoError(t, err)
-	freshConnStr, err := freshContainer.ConnectionString(ctx, "sslmode=disable")
+	// 1. Seed Production DB
+	_, err = prodDB.Exec(ctx, "INSERT INTO users (id, name) VALUES (1, 'Prod User 1'), (2, 'Prod User 2')")
 	assert.NoError(t, err)
 
-	// Connect to production DB
-	t.Logf("Production connection string: %s", prodConnStr)
-	prodConn, err := pgx.Connect(ctx, prodConnStr)
+	// 2. Start Proxy
+	proxyConnStr, stop, err := startProxy(15433, prodResource)
 	assert.NoError(t, err)
-	defer prodConn.Close(ctx)
+	defer stop()
 
-	// Connect to fresh DB
-	t.Logf("Fresh connection string: %s", freshConnStr)
-	freshConn, err := pgx.Connect(ctx, freshConnStr)
+	// 3. Connect to Proxy
+	proxyConn, err := pgx.Connect(ctx, proxyConnStr)
 	assert.NoError(t, err)
-	defer freshConn.Close(ctx)
+	defer proxyConn.Close(ctx)
 
-	// Ping databases
-	err = prodConn.Ping(ctx)
+	// 4. Query through Proxy
+	rows, err := proxyConn.Query(ctx, "SELECT id, name FROM users ORDER BY id")
 	assert.NoError(t, err)
+	defer rows.Close()
 
-	err = freshConn.Ping(ctx)
-	assert.NoError(t, err)
+	// 5. Verify Results
+	var ids []int
+	var names []string
+	for rows.Next() {
+		var id int
+		var name string
+		err := rows.Scan(&id, &name)
+		assert.NoError(t, err)
+		ids = append(ids, id)
+		names = append(names, name)
+	}
+
+	assert.Equal(t, []int{1, 2}, ids)
+	assert.Equal(t, []string{"Prod User 1", "Prod User 2"}, names)
 }
