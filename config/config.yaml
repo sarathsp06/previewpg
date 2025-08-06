@@ -1,0 +1,21 @@
+production_db:
+  host: localhost
+  port: 5432
+  user: user
+  password: password
+  dbname: prod_db
+  sslmode: disable
+
+fresh_db:
+  host: localhost
+  port: 5433
+  user: user
+  password: password
+  dbname: fresh_db
+  sslmode: disable
+
+server:
+  host: localhost
+  port: 8080
+  log_level: info
+  max_connections: 10
