@@ -11,6 +11,9 @@ import (
 	"github.com/sarathsp06/preview-sql-proxy/internal/sqlparser"
 )
 
+// Proxy is a proxy for the database
+// It routes queries to the correct database based on the statement type
+// and executes the query on the correct database
 type Proxy struct {
 	prodDB  *pgxpool.Pool
 	freshDB *pgxpool.Pool
@@ -65,6 +68,7 @@ func (p *Proxy) queryHandler(ctx context.Context, query string) (wire.PreparedSt
 	}
 }
 
+// execute executes the query on the database and returns the result
 func (p *Proxy) execute(db *pgxpool.Pool, query string) wire.PreparedStatements {
 	stmt := wire.NewStatement(func(ctx context.Context, writer wire.DataWriter, parameters []wire.Parameter) error {
 		rows, err := db.Query(ctx, query)

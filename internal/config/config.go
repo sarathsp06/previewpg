@@ -5,8 +5,8 @@ import (
 )
 
 type Config struct {
-	ProductionDB DBConfig `mapstructure:"production_db"`
-	FreshDB      DBConfig `mapstructure:"fresh_db"`
+	ProductionDB DBConfig     `mapstructure:"production_db"`
+	FreshDB      DBConfig     `mapstructure:"fresh_db"`
 	Server       ServerConfig `mapstructure:"server"`
 }
 
